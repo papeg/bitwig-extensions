@@ -16,6 +16,7 @@ import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 
 import java.util.stream.IntStream;
+import java.util.ArrayList;
 
 import static com.bitwig.extension.api.util.midi.ShortMidiMessage.NOTE_ON;
 import static java.lang.String.format;
@@ -49,7 +50,11 @@ public class MidimixExtension extends ControllerExtension {
         MidiOut midiOut = host.getMidiOutPort(0);
         Track masterTrack = host.createMasterTrack(0);
         TrackBank trackBank = host.createMainTrackBank(8, 2, 0);
-        CursorRemoteControlsPage remoteControlsPage = host.createCursorTrack("cursor", "midimix-cursor", 0, 0, true).createCursorDevice().createCursorRemoteControlsPage(8);
+        ArrayList<CursorRemoteControlsPage> remoteControlsPages = new ArrayList<CursorRemoteControlsPage>();
+
+        IntStream.range(0, 8).forEach(track -> {
+            remoteControlsPages.add(track, trackBank.getItemAt(track).createCursorDevice().createCursorRemoteControlsPage(format("eq_%d", track), 3, ""));
+        });
 
         hardwareSurface = host.createHardwareSurface();
         hardwareSurface.setPhysicalSize(237, 198);
@@ -65,12 +70,7 @@ public class MidimixExtension extends ControllerExtension {
                 AbsoluteHardwareKnob knob = hardwareSurface.createAbsoluteHardwareKnob(format("KNOB_%d_%d", row, col));
                 knob.setBounds(xOff + col * xDist, yOff + row * yDist, 12.0, 12.0);
                 knob.setAdjustValueMatcher(midiIn.createAbsoluteCCValueMatcher(0, KNOBS[row][col]));
-                if (row == 0) {
-                    knob.setBinding(remoteControlsPage.getParameter(col).value());
-                } else {
-                    Send send = trackBank.getItemAt(col).sendBank().getItemAt(row - 1);
-                    knob.setBinding(send.value());
-                }
+                knob.setBinding(remoteControlsPages.get(col).getParameter(2 - row).value());
             });
         });
 
