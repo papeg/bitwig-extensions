@@ -125,7 +125,7 @@ public class MidimixExtension extends ControllerExtension {
             recArmButton.setLabel("REC ARM");
             recArmButton.setBackgroundLight(recArmButtonLight);
             recArmButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, REC_ARM[idx]));
-            recArmButton.pressedAction().setBinding(trackCursor.arm().toggleAction());
+            recArmButton.pressedAction().setBinding(trackCursor.stopAction());
         });
 
         // This button just sends all the controller settings as MIDI.
