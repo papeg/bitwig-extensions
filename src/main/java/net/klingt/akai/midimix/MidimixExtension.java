@@ -5,13 +5,13 @@ import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.AbsoluteHardwareKnob;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.CursorRemoteControlsPage;
+import com.bitwig.extension.controller.api.HardwareActionBindable;
 import com.bitwig.extension.controller.api.HardwareButton;
 import com.bitwig.extension.controller.api.HardwareSlider;
 import com.bitwig.extension.controller.api.HardwareSurface;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.OnOffHardwareLight;
-import com.bitwig.extension.controller.api.Send;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 
@@ -50,7 +50,7 @@ public class MidimixExtension extends ControllerExtension {
         MidiOut midiOut = host.getMidiOutPort(0);
         Track masterTrack = host.createMasterTrack(0);
         TrackBank trackBank = host.createMainTrackBank(8, 2, 0);
-        ArrayList<CursorRemoteControlsPage> remoteControlsPages = new ArrayList<CursorRemoteControlsPage>();
+        ArrayList<CursorRemoteControlsPage> remoteControlsPages = new ArrayList<>();
 
         IntStream.range(0, 8).forEach(track -> {
             remoteControlsPages.add(track, trackBank.getItemAt(track).createCursorDevice().createCursorRemoteControlsPage(format("eq_%d", track), 3, ""));
@@ -94,38 +94,45 @@ public class MidimixExtension extends ControllerExtension {
             trackCursor.arm().markInterested();
             trackCursor.mute().markInterested();
             trackCursor.solo().markInterested();
+            trackCursor.isStopped().markInterested();
 
-            OnOffHardwareLight muteButtonLight = hardwareSurface.createOnOffHardwareLight(format("MUTE_BUTTON_LIGHT_%d", idx));
-            muteButtonLight.setOnColor(yellow);
-            muteButtonLight.isOn().setValueSupplier(trackCursor.mute());
-            muteButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, MUTE[idx], state.compareTo(false)));
-            HardwareButton muteButton = hardwareSurface.createHardwareButton(format("MUTE_BUTTON_%d", idx));
-            muteButton.setLabel("MUTE");
-            muteButton.setBounds(14.0 + idx * 25.0, 116.0, 10.0, 5.0);
-            muteButton.setBackgroundLight(muteButtonLight);
-            muteButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, MUTE[idx]));
-            muteButton.pressedAction().setBinding(trackCursor.mute().toggleAction());
+            // Stop Button (was Mute Button)
+            OnOffHardwareLight stopButtonLight = hardwareSurface.createOnOffHardwareLight(format("STOP_BUTTON_LIGHT_%d", idx));
+            stopButtonLight.setOnColor(yellow);
+            stopButtonLight.isOn().setValueSupplier(() -> !trackCursor.isStopped().get());
+            stopButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, MUTE[idx], state ? 127 : 0));
+            HardwareButton stopButton = hardwareSurface.createHardwareButton(format("STOP_BUTTON_%d", idx));
+            stopButton.setLabel("STOP");
+            stopButton.setBounds(14.0 + idx * 25.0, 116.0, 10.0, 5.0);
+            stopButton.setBackgroundLight(stopButtonLight);
+            stopButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, MUTE[idx]));
+            stopButton.pressedAction().setBinding(trackCursor.stopAction());
 
+            // Solo Button (unchanged)
             OnOffHardwareLight soloButtonLight = hardwareSurface.createOnOffHardwareLight(format("SOLO_BUTTON_LIGHT_%d", idx));
             soloButtonLight.setOnColor(yellow);
             soloButtonLight.isOn().setValueSupplier(trackCursor.solo());
-            soloButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, SOLO[idx], state.compareTo(false)));
+            soloButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, SOLO[idx], state ? 127 : 0));
             HardwareButton soloButton = hardwareSurface.createHardwareButton(format("SOLO_BUTTON_%d", idx));
-            soloButton.setBounds(14.0 + idx * 25.0, 116.0, 10.0, 5.0);
+            soloButton.setBounds(14.0 + idx * 25.0, 124.0, 10.0, 5.0);
             soloButton.setBackgroundLight(soloButtonLight);
             soloButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, SOLO[idx]));
             soloButton.pressedAction().setBinding(trackCursor.solo().toggleAction());
 
-            OnOffHardwareLight recArmButtonLight = hardwareSurface.createOnOffHardwareLight(format("REC-ARM_BUTTON_LIGHT_%d", idx));
-            recArmButtonLight.setOnColor(red);
-            recArmButtonLight.isOn().setValueSupplier(trackCursor.arm());
-            recArmButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, REC_ARM[idx], state.compareTo(false)));
-            HardwareButton recArmButton = hardwareSurface.createHardwareButton(format("REC-ARM_BUTTON_%d", idx));
-            recArmButton.setBounds(14.0 + idx * 25.0, 132.0, 10.0, 5.0);
-            recArmButton.setLabel("REC ARM");
-            recArmButton.setBackgroundLight(recArmButtonLight);
-            recArmButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, REC_ARM[idx]));
-            recArmButton.pressedAction().setBinding(trackCursor.stopAction());
+            // Reset Button (was Rec Arm Button)
+            HardwareButton resetButton = hardwareSurface.createHardwareButton(format("RESET_BUTTON_%d", idx));
+            resetButton.setBounds(14.0 + idx * 25.0, 132.0, 10.0, 5.0);
+            resetButton.setLabel("RESET");
+            resetButton.pressedAction().setActionMatcher(midiIn.createNoteOnActionMatcher(0, REC_ARM[idx]));
+
+            // Create action to reset parameters
+            HardwareActionBindable resetParametersAction = host.createAction(() -> {
+                for (int i = 0; i < 3; i++) {
+                    remoteControlsPages.get(idx).getParameter(i).reset();
+                }
+            }, () -> format("Reset Parameters %d", idx));
+
+            resetButton.pressedAction().setBinding(resetParametersAction);
         });
 
         // This button just sends all the controller settings as MIDI.
@@ -138,7 +145,7 @@ public class MidimixExtension extends ControllerExtension {
         bankLeftButtonLight.setOnColor(yellow);
         trackBank.canScrollBackwards().markInterested();
         bankLeftButtonLight.isOn().setValueSupplier(trackBank.canScrollBackwards());
-        bankLeftButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, BANK_LEFT, state.compareTo(false)));
+        bankLeftButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, BANK_LEFT, state ? 127 : 0));
         HardwareButton bankLeftButton = hardwareSurface.createHardwareButton("BANK-LEFT_BUTTON");
         bankLeftButton.setLabel("BANK LEFT");
         bankLeftButton.setBounds(214.0, 25.0 + 32.0, 10.0, 5.0);
@@ -150,7 +157,7 @@ public class MidimixExtension extends ControllerExtension {
         bankRightButtonLight.setOnColor(yellow);
         trackBank.canScrollForwards().markInterested();
         bankRightButtonLight.isOn().setValueSupplier(trackBank.canScrollForwards());
-        bankRightButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, BANK_RIGHT, state.compareTo(false)));
+        bankRightButtonLight.isOn().onUpdateHardware(state -> midiOut.sendMidi(NOTE_ON, BANK_RIGHT, state ? 127 : 0));
         HardwareButton bankRightButton = hardwareSurface.createHardwareButton("BANK-RIGHT_BUTTON");
         bankRightButton.setLabel("BANK RIGHT");
         bankRightButton.setBounds(214.0, 25.0 + 64.0, 10.0, 5.0);
